@@ -1,0 +1,608 @@
+---
+title: "Gradebook Analysis"
+author: "Ha Thuong Tran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+# Load libraries
+library(tidyverse)
+library(here)
+library(readxl)
+library(janitor)
+library(dataedu)
+library(corrplot)
+library(car)
+library("olsrr")
+```
+
+## Import data
+```{r eval = FALSE, echo = TRUE, message = FALSE, warning = FALSE}
+# See the current working directory
+getwd()
+```
+
+```{r read in data, eval = TRUE, echo = TRUE, message = FALSE, warning = FALSE}
+# Use readxl package to read and import file and assign it a name
+ExcelGradeBook <-
+  read_excel(
+    here("ExcelGradeBook.xlsx"),
+    sheet = 1,
+    skip = 10
+  )
+```
+
+```{r assign to new name, echo = TRUE, message = FALSE, warning = FALSE}
+# Rename data frame
+gradebook <- ExcelGradeBook
+```
+
+
+## Process data 
+
+```{r echo = TRUE, message = FALSE, warning = FALSE}
+#Rename the columns 
+gradebook <- 
+  gradebook %>% 
+  clean_names()
+```
+
+```{r}
+# Remove rows that contain nothing but NA values 
+gradebook <- gradebook[rowSums(is.na(gradebook)) < ncol(gradebook), ]
+
+# Remove unneeded columns  
+unneeded_columns <- c("repeated_grades", "make_your_own_categories", "another_type_2", "assessment_insert_new_columns_before_here")
+gradebook <- gradebook[, !(names(gradebook) %in% unneeded_columns)]
+
+```
+
+
+## Data analysis
+
+### RQ1: What is the relationship between formative and summative assessments?
+
+**Linearity**
+```{r message = FALSE, warning = FALSE, results = 'hide', fig.showtext = TRUE}  
+# Scatter plot between formative assessment and summative assessments
+# To determine linear relationship
+# With line of best fit
+gradebook %>%
+  ggplot(aes(x = formative_assessments,
+             y = summative_assessments)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm",
+              se = TRUE) +
+  labs(title = "Relationship Between Summative Assessments and Formative Assessments (with Line of Best Fit)",
+       x = "Formative Assessment Score",
+       y = "Summative Assessment Score") +
+  theme_dataedu()
+```
+**Normal distribution**
+
+```{r}
+column_to_check <- gradebook$summative_assessments
+
+# Shapiro-Wilk normality test
+shapiro.test(column_to_check)
+
+```
+Since the p-value is greater than 0.05, the null hypothesis is not rejected, suggesting that the data may be normally distributed.
+
+**Outliers**
+
+```{r message = FALSE, warning = FALSE, results = 'hide', fig.cap = "Distribution of Formative Assessment Scores", fig.showtext = FALSE}
+# Boxplot of formative assessment scores
+# To determine if there are any outliers
+gradebook %>%
+  ggplot(aes(x = "",
+             y = formative_assessments)) +
+  geom_boxplot(fill = dataedu_colors("yellow")) +
+  labs(title = "Distribution of Formative Assessment Scores",
+       x = "Formative Assessment",
+       y = "Score") +
+  theme_dataedu()
+
+# Assuming 'gradebook' is your dataset
+# Load necessary libraries if not already loaded
+# install.packages(c("ggplot2", "tidyr"))
+library(ggplot2)
+library(tidyr)
+
+# Melt the dataset using tidyr::pivot_longer
+melted_gradebook <- pivot_longer(gradebook, 
+                                 cols = c("homeworks", "classworks", "projects", "summative_assessments", "formative_assessments", "running_average"), 
+                                 names_to = "Assessment_Type", 
+                                 values_to = "Score")
+
+melted_gradebook$Assessment_Type <- factor(melted_gradebook$Assessment_Type,        levels = c("homeworks", "classworks", "projects", "summative_assessments", "formative_assessments", "running_average"))                                      
+# Create box plots for each variable
+ggplot(melted_gradebook, aes(x = Assessment_Type, y = Score)) +
+  geom_boxplot(fill = "lightcoral", color = "black", alpha = 0.7) +
+  labs(title = "Box Plots of Various Assessments in Gradebook", x = "Assessment Type", y = "Score") +
+  theme_minimal() +
+  scale_x_discrete(labels = c(
+    "homeworks" = "Homeworks",
+    "classworks" = "Classworks",
+    "projects" = "Projects",
+    "summative_assessments" = "Summative",
+    "formative_assessments" = "Formative",
+    "running_average" = "Average"
+))
+```
+
+```{r message = FALSE, warning = FALSE, results = 'hide', fig.cap = "Distribution of Summative Assessment Scores", fig.showtext = FALSE}
+# Boxplot of summative assessment scores
+# To determine if there are any outliers
+gradebook %>%
+  ggplot(aes(x = "",
+             y = summative_assessments)) +
+  geom_boxplot(fill = dataedu_colors("yellow")) +
+  labs(title = "Distribution of Summative Assessment Scores",
+       x = "Summative Assessment",
+       y = "Score") +
+  theme_dataedu()
+```
+
+We remove the outliers in summative assessment because Pearson Correlation Coefficient is sensitive to outliers.
+
+```{r}
+# Extract the column
+summative_assessments <- gradebook$summative_assessments
+
+# Calculate the first and third quartiles
+Q1 <- quantile(summative_assessments, 0.25)
+Q3 <- quantile(summative_assessments, 0.75)
+
+# Calculate the interquartile range (IQR)
+IQR_value <- IQR(summative_assessments)
+
+# Define the lower and upper bounds for outliers
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+# Identify outliers
+outliers <- gradebook$summative_assessments[gradebook$summative_assessments < lower_bound | gradebook$summative_assessments > upper_bound]
+
+# Remove outliers
+gradebook_no_outliers_summative <- gradebook[gradebook$summative_assessments >= lower_bound & gradebook$summative_assessments <= upper_bound, ]
+
+# To determine if there are any outliers
+boxplot(gradebook_no_outliers_summative$summative_assessments, main="Boxplot of Summative Assessments After Outlier Removal")
+
+view(outliers)
+view(gradebook_no_outliers_summative)
+
+```
+
+**Correlation Analysis**
+```{r}
+# Compute Pearson correlation
+correlation_coefficient <- cor(gradebook_no_outliers_summative$formative_assessments, gradebook_no_outliers_summative$summative_assessments)
+
+# Assuming x and y are your variables
+cor_test_result <- cor.test(gradebook_no_outliers_summative$formative_assessments, gradebook_no_outliers_summative$summative_assessments)
+
+# Access correlation coefficient
+cor_coefficient <- cor_test_result$estimate
+
+# Access p-value
+p_value <- cor_test_result$p.value
+
+# Print the results
+print(paste("Correlation Coefficient (r):", cor_coefficient))
+print(paste("P-value:", p_value))
+
+
+# Print the result
+cat("Pearson correlation coefficient between formative and summative assessments:", correlation_coefficient, "\n")
+
+```
+
+### RQ2: What is the relationship between homework, classwork, and project grades? 
+
+**Linearity**
+Already did in RQ3
+
+**Normal distribution**
+```{r}
+# Shapiro-Wilk normality test
+shapiro.test(gradebook$classworks)
+shapiro.test(gradebook$homeworks)
+shapiro.test(gradebook$projects)
+
+```
+
+**Remove outliers**
+Already did in RQ3.
+
+**Calculate correlation matrix**
+```{r}
+my_data <- gradebook[, c('classworks', 'homeworks', 'projects')]
+library("Hmisc")
+res2 <- rcorr(as.matrix(my_data))
+res2
+
+
+```
+
+### RQ3: What has a stronger impact on the final grade: homework, classwork, or project grades?
+
+**Linearity**
+```{r message = FALSE, warning = FALSE, results = 'hide', fig.showtext = TRUE}  
+
+# Scatter plot between homeworks and grades by percent
+gradebook %>%
+  ggplot(aes(x = homeworks,
+             y = running_average)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm",
+              se = TRUE) +
+  labs(title = "Relationship Between Homeworks and Final Grade (with Line of Best Fit)",
+       x = "Homework Score",
+       y = "Final Grade") +
+  theme_dataedu()
+
+# Scatter plot between classworks and grades by percent
+gradebook %>%
+  ggplot(aes(x = classworks,
+             y = running_average)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm",
+              se = TRUE) +
+  labs(title = "Relationship Between Classworks and Final Grade (with Line of Best Fit)",
+       x = "Classwork Score",
+       y = "Final Grade") +
+  theme_dataedu()
+
+# Scatter plot between projects and grades by percent
+gradebook %>%
+  ggplot(aes(x = projects,
+             y = running_average)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm",
+              se = TRUE) +
+  labs(title = "Relationship Between Projects and Final Grade (with Line of Best Fit)",
+       x = "Project Score",
+       y = "Final Grade") +
+  theme_dataedu()
+```
+
+**Homoscedasticity**
+
+```{r}
+# Perform Breusch-Pagan for classwork 
+model_classwork <- lm(classworks ~ running_average, data = gradebook)
+bp_test_classwork <- ncvTest(model_classwork)
+print(bp_test_classwork)
+
+# Perform Breusch-Pagan for homework 
+model_homework <- lm(homeworks ~ running_average, data = gradebook)
+bp_test_homework <- ncvTest(model_homework)
+print(bp_test_homework)
+
+# Perform Breusch-Pagan for project 
+model_project <- lm(projects ~ running_average, data = gradebook)
+bp_test_project <- ncvTest(model_project)
+print(bp_test_project)
+```
+All of the p-values are greater than 0.05, so we can assume homoscedasticity.
+
+**Multicollinearity**
+
+```{r}
+#define multiple linear regression model
+model <- lm(running_average ~ classworks + homeworks + projects, data=gradebook)
+
+#calculate the VIF for each predictor variable in the model
+vif(model)
+```
+Since each of the VIF values for the predictor variables in the model are close to 1, multicollinearity is not a problem in the model.
+
+**Outliers**
+```{r}
+# check for outliers in classwork
+gradebook %>%
+  ggplot(aes(x = "",
+             y = classworks)) +
+  geom_boxplot(fill = dataedu_colors("yellow")) +
+  labs(title = "Distribution of Classwork Scores",
+       x = "Classwork",
+       y = "Score") +
+  theme_dataedu()
+
+# check for outliers in homework
+gradebook %>%
+  ggplot(aes(x = "",
+             y = homeworks)) +
+  geom_boxplot(fill = dataedu_colors("yellow")) +
+  labs(title = "Distribution of Homework Scores",
+       x = "Homework",
+       y = "Score") +
+  theme_dataedu()
+
+# check for outliers in projects
+gradebook %>%
+  ggplot(aes(x = "",
+             y = projects)) +
+  geom_boxplot(fill = dataedu_colors("yellow")) +
+  labs(title = "Distribution of Project Scores",
+       x = "Project",
+       y = "Score") +
+  theme_dataedu()
+```
+No outliers are present. 
+
+**Normal distributions of residuals**
+```{r}
+# Perform normality test to check for normal distributions of residuals 
+ols_test_normality(model_classwork)
+ols_test_normality(model_homework)
+ols_test_normality(model_project)
+```
+Since all of the p-values are greater than 0.05, we fail to reject the null hypothesis and assume normal distribution of residuals.
+
+**Compute the model coefficients**
+```{r}
+summary(model)
+```
+All of the independent variables are significant positive predictors of final grade. Classwork scores are the most important, followed by homework scores and project scores.
+
+### RQ4: Better late or absent? What is the impact of being late vs. being absent?
+
+**Simulate data**
+
+First, we need to simulate some data. Since we already have some data in these columns, we fit a zero-inflated negative binomial model to the existing data, then simulate new data based on the count distribution of the existing data.  
+
+```{r}
+# Replace "no match" with NA in the 'late' column
+gradebook$late[gradebook$late == "No match"] <- NA
+
+# Replace "no match" with NA in the 'absent' column
+gradebook$absent[gradebook$absent == "No match"] <- NA
+
+library(pscl)
+
+# Identify the rows with original data
+original_data_late <- !is.na(gradebook$late)
+original_data_absent <- !is.na(gradebook$absent)
+
+# Fit a zero-inflated negative binomial model to the existing data
+fit_late <- zeroinfl(late ~ 1, dist = "negbin", data = gradebook)
+fit_absent <- zeroinfl(absent ~ 1, dist = "negbin", data = gradebook)
+
+# Get the probability of zero-inflation
+p_late <- predict(fit_late, type = "zero")
+p_absent <- predict(fit_absent, type = "zero")
+
+# Get the mean of the count distribution
+lambda_late <- predict(fit_late, type = "count")
+lambda_absent <- predict(fit_absent, type = "count")
+
+# Simulate the distribution for new data in the remaining rows
+gradebook$simulated_late <- gradebook$late  # Create a new column with the original data
+gradebook$simulated_absent <- gradebook$absent  # Create a new column with the original data
+
+# Simulate late and absent data for rows where there's no original data
+set.seed(1)
+
+gradebook$simulated_late[!original_data_late] <- ifelse(rbinom(sum(!original_data_late), size = 1, prob = p_late) > 0, 0, rpois(sum(!original_data_late), lambda = lambda_late))
+
+gradebook$simulated_absent[!original_data_absent] <- ifelse(rbinom(sum(!original_data_absent), size = 1, prob = p_absent) > 0, 0, rpois(sum(!original_data_absent), lambda = lambda_absent))
+
+# Convert simulated late and absent data to numeric and store them in columnes "late" and "absent" 
+gradebook$late <- as.numeric(gradebook$simulated_late)
+gradebook$absent <- as.numeric(gradebook$simulated_absent)
+```
+
+**Create bar charts for 'late' and 'absent'**
+
+```{r}
+library(ggplot2)
+
+# Bar chart for 'late'
+ggplot(gradebook, aes(x = late)) +
+  geom_bar(fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Late Counts", x = "Late Count", y = "Frequency") +
+  theme_minimal()
+
+# Bar chart for 'absent'
+ggplot(gradebook, aes(x = absent)) +
+  geom_bar(fill = "lightcoral", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Absent Counts", x = "Absent Count", y = "Frequency") +
+  theme_minimal()
+```
+
+
+**Homoscedasticity**
+```{r}
+
+model_late_absent <- lm(running_average ~ late + absent, data=gradebook)
+residuals <- residuals(model_late_absent)
+plot(model_late_absent, which = 1)
+
+```
+**Multicollinearity**
+```{r}
+car::vif(model_late_absent)
+```
+
+**Normal distribution of errors**
+```{r}
+ols_test_normality(model_late_absent)
+```
+
+**Run MLR model**
+```{r}
+summary(model_late_absent)
+```
+
+### RQ5: What has a stronger impact on final grade: race or gender?
+
+**Generate random data**
+```{r}
+set.seed(1)
+
+# Generate random gender data
+gradebook$gender <- sample(c("Male", "Female"), nrow(gradebook), replace = TRUE)
+
+#Generate random race data 
+gradebook$race <- sample(c("Caucasian", "Asian", "Black"), nrow(gradebook), replace = TRUE)
+
+# Print the first few rows of the data frame
+head(gradebook)
+
+```
+
+**Visualize data**
+
+```{r}
+library(ggplot2)
+
+# Pie chart for gender
+ggplot(gradebook, aes(x = "", fill = gender)) +
+  geom_bar(width = 1, stat = "count") +
+  geom_text(aes(label = stat(count), group = gender), stat = "count", position = position_stack(vjust = 0.5), color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "Gender Distribution")
+
+# Pie chart for race
+ggplot(gradebook, aes(x = "", fill = race)) +
+  geom_bar(width = 1, stat = "count") +
+  geom_text(aes(label = stat(count), group = race), stat = "count", position = position_stack(vjust = 0.5), color = "white") +
+  coord_polar(theta = "y") +
+  labs(title = "Race Distribution")
+
+
+
+```
+
+**Homoscedasticity**
+```{r}
+
+model_race_gender <- lm(running_average ~ race + gender, data=gradebook)
+residuals <- residuals(model_race_gender)
+plot(model_race_gender, which = 1)
+
+```
+**Multicollinearity**
+```{r}
+car::vif(model_race_gender)
+```
+**Normal distribution of errors**
+```{r}
+ols_test_normality(model_race_gender)
+```
+**Run MLR**
+```{r}
+summary(model_race_gender)
+```
+```{r}
+model_race <- lm(running_average ~ race, data = gradebook)
+summary(model_race)
+
+model_gender <- lm(running_average ~ gender, data = gradebook)
+summary(model_gender)
+```
+
+### RQ6: What has a stronger impact on final grade: age or financial status?
+
+**Generate random data**
+```{r}
+set.seed(1)
+
+# Simulate the 'age' column using a normal distribution
+gradebook$age <- round(rnorm(nrow(gradebook), mean = 25, sd = 5))
+
+# Simulate the 'financial_status' column using a normal distribution for scores
+gradebook$financial_status <- round(rnorm(nrow(gradebook), mean = 75, sd = 10))
+```
+
+**Plot histograms for age and financial status**
+
+```{r}
+library(ggplot2)
+
+# Histogram for 'age'
+ggplot(gradebook, aes(x = age)) +
+  geom_histogram(binwidth = 1, fill = "skyblue", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Age", x = "Age", y = "Frequency") +
+  theme_minimal()
+
+# Histogram for 'financial_status'
+ggplot(gradebook, aes(x = financial_status)) +
+  geom_histogram(binwidth = 5, fill = "lightcoral", color = "black", alpha = 0.7) +
+  labs(title = "Distribution of Financial Status", x = "Financial Status", y = "Frequency") +
+  theme_minimal()
+```
+
+**Linearity**
+```{r message = FALSE, warning = FALSE, results = 'hide', fig.showtext = TRUE}  
+
+# Scatter plot between age and grades by percent
+gradebook %>%
+  ggplot(aes(x = age,
+             y = running_average)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "Relationship Between Age and Final Grade (with Line of Best Fit)",
+       x = "Age",
+       y = "Final Grade") +
+  theme_dataedu()
+
+# Scatter plot between financial status and grades by percent
+gradebook %>%
+  ggplot(aes(x = financial_status,
+             y = running_average)) +
+  geom_point(color = dataedu_colors("green")) +
+  geom_smooth(method = "lm",
+              se = TRUE) +
+  labs(title = "Relationship Between Financial Status and Final Grade (with Line of Best Fit)",
+       x = "Financial Status",
+       y = "Final Grade") +
+  theme_dataedu()
+```
+**Loess curve**
+
+```{r}
+plot(gradebook$age,gradebook$running_average)
+lines(loess.smooth(gradebook$age, gradebook$running_average), col = "red")
+
+
+plot(gradebook$financial_status,gradebook$running_average)
+lines(loess.smooth(gradebook$financial_status, gradebook$running_average), col = "red")
+```
+
+```{r}
+model <- lm(running_average ~ age + financial_status, data = gradebook)
+```
+
+**Homoscedasticity**
+```{r}
+
+model_age_finance <- lm(running_average ~ age + financial_status, data=gradebook)
+residuals <- residuals(model_age_finance)
+plot(model_age_finance, which = 1)
+
+```
+**Multicollinearity**
+```{r}
+vif(model_age_finance)
+```
+
+**Normal distribution of errors**
+```{r}
+ols_test_normality(model_age_finance)
+```
+
+**Run MLR**
+```{r}
+summary(model_age_finance)
+```
+
