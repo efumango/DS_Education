@@ -1,0 +1,80 @@
+Date,Topics ,Entries21/10/2023,Research articles on the topic Education as a Data Science Application Field,"Perchinunno, P., Bilancia, M. & Vitale, D. A Statistical Analysis of Factors Affecting Higher Education Dropouts. Soc Indic Res 156, 341?362 (2021). 
+What itÕs about: The study addresses the problem of dropouts in Italy from a dual point of view 
+Identify main trends and dynamics of dropout rates at the national level
+Identify the most important contributing factors to students dropping out
+Objective: reduce the size of the phenomenon of dropping out and its negative impact on the productivity of the system and on the profitability of the investment in education by the public sector and private individuals (students and their families)
+Collected data: 
+Data source: National Agency for the Evaluation of the University and Research System (ANVUR) and National Student Registry (ANS) 
+Aggregate level: University dropout rate between the first and second year of the course & mobility between the first and second year of the course disaggregated by scientific area / geographical location in Italy
+Individual level: same data as above but from the University of Bari Aldo Moro + data of explanatory variables (gender type of high school diploma, high school diploma grade, number of credits achieved during the first year of the course)
+Methods:
+Descriptive analysis
+Supervised classification algorithms: create an empirical relationship between the space of the input variables and the classification label, making it possible to predict the label for future instances, for which only the input variables are available -> identify the most important variables in explaining dropouts & predict the performance of future students based on historical data
+In-sample analysis using a simple logistic regression model
+Out-of-sample analysis using the estimation of a decision tree. 
+
+
+Hung H-C, Liu I-F, Liang C-T, Su Y-S. Applying Educational Data Mining to Explore StudentsÕ Learning Patterns in the Flipped Learning Approach for Coding Education. Symmetry. 2020; 12(2):213. 
+Purpose: predict learnersÕ learning performance and provide personalized guidance or reminders for high-risk learners to enhance the efficiency and effectiveness of future teaching.
+Data
+Source: Gathered from 2 Python programming courses at a university in northern Taiwan. Learning environment: blended learning (a weekly online lecture on the LMS (learning management system), face-to-face course, online quiz, test, Facebook live class) 
+Types of data:
+The source of the studentsÕ asynchronous online learning behavior was obtained from the learning management system log file. The information included the studentÕs necessary information (student number, department, name), the results of 11 regular homework assignments, the order of submission, the time of submission, whether the student submits late, the results of the final report, three times the average test scores, and the usual class interaction scores.
+The source of the studentsÕ synchronous learning behavior was from the Facebook live platform. Information: platform information as Create_time (message generation time), live_broadcast_timestamp (message generated at the time of the broadcast), message (message content), and NAME (message publisher).
+The source of the studentsÕ course evaluation was from the learner questionnaire. There were four major themes, namely, personal background, teaching platform and curriculum design planning, actual platform usage, and open questions.
+Methods:	
+Supervised learning: 
+3 algorithms (logistic regression, decision trees,random forests) -> explore the learnersÕ learning outcomes at the end of the term with the target variable being whether the final grade was passed or not.
+Apply these 3 models to make mid-term predictions and find the best one
+Apply the best model of the 3 models to another class to evaluate the model 
+Unsupervised learning:
+Clustering approach -> find learners w/ different learning behaviors 
+Apply Euclidean distance + hierarchical grouping method to generate tree diagram."11/11/2023,What else can we do with the dataframe Gradebook?,"Correlation analysis: 
+Explore relationship between age / gender / race / financial status on the running average
+Explore relationship between age / gender / race / financial status on the absenteeism / lateness 
+Regression analysis: 
+Compare the impact of homework, classwork, projects, formative assessments on the running average. 
+Time Series Analysis on data that have a time component such as homework, classwork, project, summative & formative assessment to see if thereÕs any improvement / worsening of performance over time."18/11/2023,Gradebook analysis,"Correlation analysis
+Pearson vs. Spearman correlation
+Steps before calculating correlation coefficients: 
+Check if variables of interests use continuous scale 
+Check for linearity with scatter plot, line of best fit 
+Check for normal distribution using Shapiro-Wilk test (if p-value > 0.05 -> normal distribution) 
+Check for outliers, remove them if needed using quartiles 
+
+Multiple Linear Regression 
+Assumptions
+
+The dependent variable (the variable of interest) needs to be using a continuous scale.
+There are two or more independent variables. These can be measured using either continuous or categorical means.
+Linearity, which you can check by using a scatter plot.
+Only need to check the linearity assumption for continuous predictors, since for example, in cases where we have only 2 categories, the line of best fit connects the conditional means of the two categories, and a line between two points cannot be anything but linear.
+Homoscedasticity
+Definition: spread or variability of the residuals (the differences between the observed and predicted values) is approximately the same across all levels of the independent variable(s) 
+Example: Imagine you're trying to predict someone's weight based on their height. Homoscedasticity means that, regardless of a person's height, the differences between their actual weight and the weight predicted by your model should be spread out in a consistent way. In other words, as people's height increases, the variability in how much your weight predictions might be off should stay roughly the same.
+Check with Breusch-Pagan test: If the p-value is greater than the alpha value, we fail to reject the null hypothesis and assume homoscedasticity.
+No multicollinearity. Check with Variance-inflation-factor or VIF values. High VIF indicates that the associated independent variable is highly collinear with the other variables in the model. 
+How to check for multicollinearity with VIF
+The closer VIF is to 1, the better.
+No spurious outliers.
+Normal distribution of the residuals (errors). This can be checked by a histogram (with a superimposed normal curve) and by plotting the of the standardized residuals using either a P-P Plot, or a Normal Q-Q Plot.
+How to check for normal distribution of residuals "19/11/2023,Gradebook analysis,"Sample size
+This provides a simple guide on how to calculate the sample size we need for multiple regression, but this topic seems more complicated than I thought. There are many papers attempting to solve the problem of sample size, each saying different things backed up by complicated math. For this exercise, as the data has to be randomized anyway, IÕm going to follow a very simple rule of thumb: at least 10 observations per variable.
+Data Transformation
+When to use what transformation
+Tried box-cox transformation for RQ4 but optimal lambda = NULL
+Non-linear regression
+Poisson regression: can be considered when the dependent variable is a count variable "10/12/2023,Aggregate analysis,"Reflection
+The aggregate analysis task was harder than I expected. I started with a simple question ÒHow is the distribution of racial subgroups in non high-poverty schools?Ó. I thought it was simple because we already had a similar example in the textbook, namely ÒHow is the distribution of racial subgroups in high-poverty schools?Ó. This was not the case. IÕve had a lot of misunderstandings and therefore made many mistakes (which was a good thing in retrospect). 
+At first I just tried to modify the code for the distribution of population in the whole district. I filtered the schools where frpl_pct < 0.75 and I slapped the code there but of course it didnÕt work. The Total still stays the same because all I did was selecting non high-poverty schools. 
+I took a step back and tried to modify the Total. After all, if I want to calculate the racial distribution in non high-poverty schools, I only need to filter out all the schools where frpl_pct < 0.75, then modify the Total row so that the sums and percentages for this new data frame of non high-poverty schools are correctly displayed. And then I can just slap the code for distribution of population in the district here. IsnÕt that what they did for the question about the distribution of racial subgroups in high-poverty schools also? Then I should see the reverse of this graph that they have in the book. But I didnÕt. 
+What I did in the previous step was practically looking at the racial composition of students in non high-poverty schools. Of course there are some interesting insights from this graph, e.g., it amazes me that almost half of the students here are white. But then I guess it makes sense, because 35% of the total population is white. If we talk about the whole population, then the number of black and white students are almost the same. But if we only look at non high-poverty schools, the composition has changed a lot (not for Hispanic, Asian and Native American students though). Now we have 47.1% of the population in low poverty school is white, while only 29.5% of them is black. 
+
+What they did in the textbook is dividing the number of students in high poverty schools by the total number of students in that race. So after I tried something similar, I got this chart, which at least says something different than white students being overrepresented in low poverty schools (which we already knew from the other charts presented in the chapter). 72.2% of Asian kids go to non high-poverty schools. 
+
+There is no number that indicates a low poverty school (MAJOR EDIT: there IS, itÕs < 25% FRPL), but if we decrease the threshold of 0.75 a bit, maybe we can get even shocking results (?). Here I cut it down to 0.50 and can already see a drastic change. The percentage of Asian kids goes down by almost 30%, the percentage of Hispanic and black kids decreases by ~35%, and most drastically, the percentage of Native American children sinks by 41%, while the percentage of white kids still remains pretty high at almost 70%. "11/12/2023,Longitudinal analysis,"This is an interesting dataset that has lots of potential. Thinking about the mistake that I made w/ the aggregate analysis (distribution vs. composition), I decided to go with a question on the ethnic composition of disabled children over time. 
+Data cleaning was time-consuming, even though we had guides from the book. After a bunch of cleaning and grouping, I have this dataset on the number of disabled children grouped by race in each year for the whole country. 
+
+Now I just need to visualize this with a stacked bar chart. 
+
+Nothing too dramatic, things stay basically the same over the years. But a result nevertheless!"

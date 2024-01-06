@@ -1,0 +1,259 @@
+---
+title: "Learning Journal Analysis"
+author: "Ha Thuong Tran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Load packages
+
+```{r}
+library(tidyverse)
+library(here)
+library(dataedu)
+library(tidytext)
+```
+
+# Process data
+
+**Import data**
+
+The .csv file was compiled from the google document, which includes time stamps in the history versions. 
+
+```{r}
+here::here()
+```
+
+```{r}
+
+learning_journal <- read_csv(here("Text Analytics", "learning_journal_data.csv"))
+```
+
+**Tokenize data**
+
+```{r}
+tokens <- 
+  learning_journal %>%
+  unnest_tokens(output = word, input = Entries)
+```
+
+**Remove stop words**
+
+```{r}
+data(stop_words)
+
+tokens <-
+  tokens %>%
+  anti_join(stop_words, by = "word")
+
+head(tokens)
+```
+
+**Convert 'Date' to Date format**
+```{r}
+tokens$Date <- as.Date(tokens$Date, format = "%d/%m/%Y")
+```
+
+
+# Data overview
+
+## Number of words by date
+
+```{r}
+# Count the number of words for each date
+word_counts_by_date <- tokens %>%
+  group_by(Date) %>%
+  summarise(WordCount = n())
+
+# View the result
+print(word_counts_by_date)
+```
+
+It becomes apparent that I wrote the most on the first day of the journal. 
+
+## Number of words by topics
+
+```{r}
+
+# Count the number of words for each date
+word_counts_by_topics <- tokens %>%
+  group_by(Topics) %>%
+  summarise(WordCount = n())
+
+# View the result
+print(word_counts_by_topics)
+```
+
+It's obvious that the entry on the first topic "Research articles on the topic Education as a Data Science Application Field" is the longest. I also wrote entries of decent length for gradebook and aggregate analysis but it seems like I didn't have a lot to say on longitudinal analysis. 
+
+
+## Frequency of words in the whole data set
+
+```{r}
+wc <- tokens %>% 
+    count(word, sort = TRUE)
+
+head(wc)
+```
+
+From this simple frequency table, we can see that "students" is the most used word, followed by "data", "learning", "poverty" and "schools". The word "students", "data", "learning", "schools" coming up frequently is not a surprise, considering the seminar focuses on the application of data science in an educational context. The word "poverty" appears a lot, which suggests that I might have written a lot in the reflection on my aggregate analysis of the data set that puts a focus on the poverty level of each school in a district.
+
+## Frequency of words in each topic
+
+```{r}
+word_counts <- tokens %>%
+  group_by(Date, Topics, word) %>%
+  summarise(WordCount = n()) %>%
+  arrange(Date, desc(WordCount))
+
+word_counts
+```
+
+We can also plot the histogram for 10 most used words for each topic. Based on this, we can have a basic idea of what were written in each topic. Below is a function to plot the histogram that we can reuse for other topics. 
+
+```{r}
+generate_word_histogram <- function(topic, data, top_n = 10) {
+  #Filter data for the specified topic
+  topic_words <- data %>%
+    filter(Topics == topic) %>%
+    select(word, WordCount)
+
+  #Sort the data by WordCount and select the top words
+  top_words <- topic_words %>%
+    arrange(desc(WordCount)) %>%
+    head(top_n)
+
+  #Plot the histogram
+  ggplot(top_words, aes(x = reorder(word, -WordCount), y = WordCount)) +
+    geom_bar(stat = "identity", fill = dataedu_colors("yellow")) +
+    labs(title = paste("Top", top_n, "Most Used Words in", topic),
+         x = "Word",
+         y = "WordFrequency") +
+    theme_dataedu() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+}
+```
+
+For example, here's the histogram for "Gradebook analysis".
+
+```{r}
+generate_word_histogram("Gradebook analysis", word_counts)
+```
+
+We can see that we have a pretty technical conversation going on here. The most used words is "check" because the gradebook analysis mostly concerns itself with linear regression & correlation analysis, so a lot of assumptions (e.g. continuous scale, normal distribution of residuals) need to be checked before the analysis is done. These assumptions were documented in the learning journal. 
+
+Or take another example, the aggregate analysis. 
+
+```{r}
+# Example: Generate histogram for "Aggregate analysis"
+generate_word_histogram("Aggregate analysis", word_counts)
+```
+
+From this histogram, we can see the general idea behind this aggregate analysis. From the words "poverty","schools", "students", "white" and "racial", we can guess that the analysis is about poverty & race in schools. 
+
+But sometimes things do not work out very well and people wouldn't be able to tell what I was writing about if they just look at the distribution of words. 
+
+```{r}
+# Example: Generate histogram for "Aggregate analysis"
+generate_word_histogram("Research articles on the topic Education as a Data Science Application Field", word_counts)
+```
+
+Here the words are too vague and I don't think I can derive anything from this other than maybe this entry is about analyzing data to get some information on students, which is actually correct, but not specific enough.
+
+
+# Sentiment analysis
+
+Now we want to carry out sentiment analysis to see how we feel about the whole seminar over time. We will answer the question "**What is the trend of the positive sentiment over time?**"
+
+```{r}
+nrc <- get_sentiments("nrc")
+```
+
+
+```{r}
+#Merge tokens with nrc to associate sentiments with words 
+merged_data <- tokens %>%
+  inner_join(nrc, by = "word", relationship="many-to-many")
+
+#Count the number of words with positive sentiment over time 
+sentiment_counts <- merged_data %>%
+  filter(sentiment == "positive") %>%
+  group_by(Date) %>%
+  summarise(PositiveCount = n())
+
+#Calculate percentage of positive sentiment over time 
+sentiment_counts <- sentiment_counts %>%
+  left_join(word_counts_by_date, by = "Date") %>%
+  mutate(positive_pct = (PositiveCount / WordCount) * 100) %>%
+  select(Date, PositiveCount, WordCount, positive_pct)
+
+#Plot sentiment over time 
+ggplot(sentiment_counts, aes(x = Date, y = positive_pct)) +
+  geom_line() +
+  labs(title = "Positive Sentiment Over Time",
+       x = "Date",
+       y = "Positive Percentage") +
+  theme_dataedu() +
+  scale_x_date(breaks = sentiment_counts$Date, date_labels = "%Y-%m-%d") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We see a comparatively large percentage of positive words on October 21st, so we'd want to see what happens there. We filter out the positive words used in that day.
+
+```{r}
+sentiment_pos <- merged_data %>%
+  filter(sentiment == "positive" & Date ==  as.Date("2023-10-21", format = "%Y-%m-%d") ) 
+
+sentiment_pos_counts <- sentiment_pos %>%
+  count(word, sort = TRUE)
+
+head(sentiment_pos_counts)
+```
+
+On that day, I made a summary of 2 research papers on the application of data science in the field of education, that's why we see so many occurrences of "learning" and "university", which contribute to the relatively big number of words with positive sentiment. 
+
+Now we turn our attention to 18/11 and 19/11, where the percentage of words with positive sentiment is the lowest. Maybe we can benefit from seeing the trend of negative sentiments over time. 
+
+```{r}
+
+#Count the number of words with negative sentiment over time 
+sentiment_counts_neg <- merged_data %>%
+  filter(sentiment == "negative") %>%
+  group_by(Date) %>%
+  summarise(NegativeCount = n())
+
+#Calculate percentage of negative sentiment over time 
+sentiment_counts_neg <- sentiment_counts_neg %>%
+  left_join(word_counts_by_date, by = "Date") %>%
+  mutate(negative_pct = (NegativeCount / WordCount) * 100) %>%
+  select(Date, NegativeCount, WordCount, negative_pct)
+
+#Plot sentiment over time 
+ggplot(sentiment_counts_neg, aes(x = Date, y = negative_pct)) +
+  geom_line() +
+  labs(title = "Negative Sentiment Over Time",
+       x = "Date",
+       y = "Negative Percentage") +
+  theme_dataedu() +
+  scale_x_date(breaks = sentiment_counts$Date, date_labels = "%Y-%m-%d") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We can see that the percentage of words with negative sentiment also reaches its peak in 19/11, so we'll take a look at what exactly is so negative about the entry in this date. 
+
+
+```{r}
+
+sentiment_neg <- merged_data %>%
+  filter(sentiment == "negative" & Date == as.Date("2023-11-19", format = "%Y-%m-%d") ) 
+
+sentiment_neg_counts <- sentiment_neg %>%
+  count(word, sort = TRUE)
+
+sentiment_neg_counts
+```
+
+Now we know the reason to the negative tone of the entry in 19/11. The entry of that day mainly concerns regression, which in this context doesn't contain a negative sentiment, but the nrc data set doesn't know the context. This could be a problem about this method of sentiment analysis. 

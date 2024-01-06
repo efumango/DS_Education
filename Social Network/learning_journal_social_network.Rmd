@@ -1,0 +1,330 @@
+---
+title: "Social Network Analysis"
+author: "Ha Thuong Tran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+
+```{r}
+library(tidyverse)
+library(here)
+library(dataedu)
+library(tidytext)
+options(warn = -1) 
+```
+
+## Select import important concepts 
+
+To detect the most important concepts in the learning journal, the first thing I did is to summarize all entries briefly with words that appear in them. I've added a column named "Summaries" to the original data set that contains all entries categorized by date and topic. 
+
+```{r}
+here::here()
+```
+
+```{r}
+lj_data <- read_csv(here("Social Network", "learning_journal_data1.csv"))
+
+lj_data_original <- lj_data
+
+
+```
+
+Now I want to tokenize the Summaries column into words. These tokens will be our concepts. 
+
+```{r}
+
+# Tokenize the Summaries column
+concepts <- lj_data %>%
+  unnest_tokens(word, Summaries)
+
+# Remove duplicates 
+concepts <- concepts %>%
+  distinct(word)
+
+head(concepts)
+
+```
+
+There are a few words here that, as concepts, do not carry much meaning, so we'd want to remove them. 
+
+```{r}
+# Import data set of stop words
+data(stop_words)
+
+# Remove words from concepts that are contained in stop_words
+concepts <-
+  concepts %>%
+  anti_join(stop_words, by = "word")
+
+concepts
+```
+
+With this, we have a pretty good list of concepts for later steps. 
+
+
+## Create edge list
+
+From the list of concepts that we just obtained, now we can create an undirected edge list. We want to have 2 columns for 2 concepts. Each pair of concepts should be unique.
+
+```{r}
+# Generate all unique pairs of concepts
+edgelist <- as.data.frame(t(combn(concepts$word, 2)))
+
+# Rename the columns
+colnames(edgelist) <- c("concept1", "concept2")
+
+head(edgelist)
+```
+
+
+## Divide entries into sections
+
+Because we want to count the number of times the concepts coexist within a section, we first need to define what a section is. Here, a section is a paragraph, so we need to separate all entries into paragraphs. 
+
+```{r}
+library(stringr)
+
+# Create a new column "Paragraphs" in lj_data
+lj_data$Paragraphs <- str_split(lj_data$Entries, "\n")
+
+# Unnest the data frame
+lj_data <- unnest(lj_data, cols = "Paragraphs")
+
+# Remove non-UTF-8 characters and convert to lowercase
+lj_data$Paragraphs <- iconv(lj_data$Paragraphs, to = "UTF-8", sub = "")
+lj_data$Paragraphs <- tolower(lj_data$Paragraphs)
+
+# View the resulting data frame
+head(lj_data$Paragraphs)
+
+view(lj_data)
+```
+
+
+## Count co-occurences
+
+Now we want to write a function to count the number of times two words coexist within a paragraph. We loop through all paragraphs, use grepl() to check if both words given in the parameters exist in each paragraph. We have a variable "count" being incremented every time there is a row in the "Paragraphs" column that contains both words. 
+
+```{r}
+count_words_occurrence <- function(data_frame, word1, word2) {
+  count <- 0
+  for (i in 1:nrow(data_frame)) {
+    if (grepl(word1, data_frame$Paragraphs[i]) && grepl(word2, data_frame$Paragraphs[i])) {
+      count <- count + 1
+    }
+  }
+  return(count)
+}
+```
+
+We apply this function to all pairs of concepts in the edge list. The resulting count of co-occurrences will be displayed in the weight column. 
+
+```{r}
+# Apply the function to every row of the edge list
+edgelist$weight <- apply(edgelist, 1, function(row) {
+  count_words_occurrence(lj_data, row["concept1"], row["concept2"])
+})
+
+# Sort the edge list according to the weight column 
+sorted_edgelist <- edgelist[order(-edgelist$weight), ]
+
+head(sorted_edgelist)
+```
+
+We will leave out the pairs of concepts that have no or only one co-occurrence (weight =<1).
+
+```{r}
+filtered_edgelist <- sorted_edgelist %>%
+  filter(weight > 1)
+
+filtered_edgelist
+```
+
+## Plot the network of concepts
+
+```{r}
+library(tidygraph)
+library(ggraph)
+g <- 
+  as_tbl_graph(filtered_edgelist)
+
+g %>%
+  ggraph(layout = "kk") +
+  geom_node_text(aes(label = name), vjust = 1.8) +
+  geom_edge_link(aes(width = weight), alpha = 0.2) +  
+  scale_edge_width_continuous(range = c(1, 5)) +  
+  theme_graph()
+```
+
+The darker a node is, the more connections to other words it has. Here we can see that the darker nodes here are: analysis, distribution, poverty, plot and check. There also seems to be two observable clutters around the words "analysis" and "check". When we take a look at the words in these two clutters, we can see that these concepts belong in two main topics, namely the aggregate analysis where we discussed the distribution of students in schools in a district based on race and poverty level, and the grade book analysis where we talked a lot about different assumptions of linear regression & correlation. Another interesting thing here to take note of is how the concept "plot" is the bridge between two aforementioned clusters. 
+
+## RQ: What are the central concepts in the learning journal? 
+
+From the graph above, it would be appropriate to conclude that the most important concepts are "analysis", "distribution", and "check". But the problem here is that since we count the co-occurrences of paragraphs that two words appear together, it could be that some pairs of words would appear more frequently because I happened to write more on some entries (hence, more paragraphs) than the others. So for this question, we tried another unit for section, which is a whole entry. This way, we count the number of entries where a pair of words coexist instead of paragraphs. 
+
+```{r}
+
+# Function to count the entries where two words appear together 
+count_words_occurrence_entries <- function(data_frame, word1, word2) {
+  count <- 0
+  for (i in 1:nrow(data_frame)) {
+    if (grepl(word1, data_frame$Entries[i]) && grepl(word2, data_frame$Entries[i])) {
+      count <- count + 1
+    }
+  }
+  return(count)
+}
+
+# Apply the function to all pairs of words 
+edgelist_entries <- edgelist
+edgelist_entries$weight <- apply(edgelist_entries, 1, function(row) {
+  count_words_occurrence_entries(lj_data_original, row["concept1"], row["concept2"])
+})
+
+# Sort the edge list according to the weight column 
+sorted_edgelist_entries <- edgelist_entries[order(-edgelist_entries$weight), ]
+
+# Filter out the edges where the weight is 0 
+filtered_edgelist_entries <- sorted_edgelist_entries %>%
+  filter(weight > 1)
+
+# Plot the network 
+g_entries <- 
+  as_tbl_graph(filtered_edgelist_entries)
+
+g_entries %>%
+  ggraph(layout = "kk") +
+  geom_node_text(aes(label = name), vjust = 1.8) +
+  geom_edge_link(aes(width = weight), alpha = 0.2) +  
+  scale_edge_width_continuous(range = c(1, 5)) +  
+  theme_graph()
+```
+
+Now we have a better-looking graph than before. It's clear that data analysis is the central concept here, which is expected. It's interesting that "distribution" and "race" seem to be the bridges between two different clusters, one being the cluster of concepts I can find in the gradebook analysis, and one being the cluster of concepts for aggregate analysis. This makes sense because race is the variable that came up in gradebook analysis, aggregate analysis and also longitudinal analysis. My aggregate analysis contains a few questions on the distribution of students, and "distribution" came up in gradebook analyis because I wrote about assumptions of normal distribution of residuals. Looking at other clusters, we can also see that I write about using data analysis to look at the impact & relationship as well as to predict trends, which is indeed the main theme of the entry where I summarized two research articles & the entry where I brainstormed ideas for the gradebook analysis. 
+
+## RQ: How has the network structure evolved over different topics? 
+
+In the analysis of the learning journal with text analytics, we've tried guessing the content of each topic based on the frequency of words. This approach worked well for some topics (e.g. "Aggregate analysis" or "Gradebook analysis"), but not for the others (e.g. "Research articles"), so now we're going to answer the research question **How has the network structure evolved over different topics** by looking at the social network of concepts in each topic, and then we'll see if we can get a better understanding of each topic compared to when we have only the frequency of words to go by. 
+
+First, we want to filter the data set lj_data based on the topic. 
+
+```{r}
+# View unique topics
+unique_topics <- unique(lj_data$Topics)
+
+unique_topics
+
+```
+
+```{r}
+# Create a list to store separate data frames for each topic
+topic_dataframes <- list()
+
+# Loop through each unique topic and create a separate data frame
+for (topic in unique_topics) {
+  topic_df <- lj_data[lj_data$Topics == topic, ]
+  topic_dataframes[[topic]] <- topic_df
+}
+
+# Assign name for each data frame 
+lj_rs <- topic_dataframes$"Research articles on the topic Education as a Data Science Application Field"
+
+lj_gradebook_idea <- topic_dataframes$"What else can we do with the dataframe Gradebook?"
+
+lj_gradebook_analysis <- topic_dataframes$"Gradebook analysis"
+
+lj_aggregate <- topic_dataframes$"Aggregate analysis"
+
+lj_longitudinal <- topic_dataframes$"Longitudinal analysis"
+
+lj_text <- topic_dataframes$"Text analytics"
+```
+
+Now we write a function to plot the network for each topic. This function is very similar to the previous step where we plot the social network for the whole learning journal.
+
+```{r}
+
+plot_network_for_topics <- function(edgelist, lj_data) {
+  # Apply the function to every row of the edge list
+  edgelist$weight <- apply(edgelist, 1, function(row) {
+    count_words_occurrence(lj_data, row["concept1"], row["concept2"])
+  })
+  
+  # Sort the edge list according to the weight column 
+  sorted_edgelist <- edgelist[order(-edgelist$weight), ]
+  
+  # Filter out the edges where weight = 0 
+  filtered_edgelist <- sorted_edgelist %>%
+    filter(weight > 0)
+  
+  # Plot the network
+  g <- as_tbl_graph(filtered_edgelist)
+  
+  g %>%
+    ggraph(layout = "kk") +
+    geom_node_text(aes(label = name), vjust = 1.8) +
+    geom_edge_link(aes(width = weight), alpha = 0.2) +  
+    scale_edge_width_continuous(range = c(1, 5)) +  
+    theme_graph()
+}
+```
+
+Now we can plot the network for the first topic, the one where we summarized main points of two research articles on the application of data science on the field of education. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_rs)
+```
+
+It's not pretty to look at, but we can see the content of the topic so much more clearly compared to when we only had frequency of words to go by. Here we can detect a cluster which conveys the idea of "identifying variables and factors that explain dropouts", which actually is a pretty neat summary of the first research article. Unfortunately, we do not see a similar cluster emerging for the second research article. 
+
+We move on to the second topic, where we brainstorm ideas for the gradebook analysis. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_gradebook_idea)
+```
+
+It's interesting that we see "analysis" in the middle of all concepts. We can even see the exact 3 ideas that I wrote in this entry, namely: use regression analysis to compare the impact, use correlation analysis to explore relationship, and use time series analysis to see the trend of the performance. 
+
+Now we look at the plot for the next entry where we analyzed the gradebook. In this entry, I wrote a lot about the assumptions and various other things concerning regression and correlation. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_gradebook_analysis)
+
+```
+
+Here we have a pretty messy network, but we can still tell "check" is the most important concept here. I'd say the result here is better than the frequency approach, because we can tell what exactly here that we want to check (homoscedasticity, multicollinearity, linearity, outliers and residuals).  
+
+Next is the topic of aggregate analysis, where we analyzed an aggregate data set of schools in a district. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_aggregate)
+```
+
+It's clear from the network that we have four most important concepts, which are "distribution", "schools", "race" and "poverty". These central concepts help us detect the content of the entry. 
+
+Now we take a look at the plot of the topic of longitudinal analysis. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_longitudinal)
+
+```
+
+It's also pretty clear from this network that we have a distribution / composition analysis of disabled children based on their race. 
+
+The last topic is text analytics. 
+
+```{r}
+plot_network_for_topics(edgelist, lj_text)
+
+
+```
+
+we have a pretty interesting shape here. Since in this entry we discussed all other entries in our journal, concepts in other entries are also mentioned. We see another cluster on the top with four words, and from these we can tell that this entry discusses the comparison of positive sentiment over time, which is again accurate. 
+
+Overall, the social network provides a much better method to detect the content of the learning journal than merely looking at the frequency of words in each section. First of all, because we already have a list of important concepts before plotting the network, so we can make sure that all these concepts are relevant. Secondly, because we can see the relationship of the words based on their position on the network (whether or not they stand close together) and the thickness of the edges, we can get a pretty good grasp on what was written about in each topic. 
