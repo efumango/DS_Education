@@ -1,0 +1,256 @@
+---
+title: "Multilevel & Predictive Model"
+author: "Ha Thuong Tran"
+date: "`r Sys.Date()`"
+output: html_document
+---
+```{r}
+# load the packages
+library(here)
+library(tidyverse)
+library(caret)
+library(ranger)
+library(e1071)
+library(tidylog)
+library(dataedu)
+library(nnet)
+```
+
+
+# Import data 
+```{r}
+here()
+
+data <- read_delim("data.csv", show_col_types = FALSE)
+
+head(data)
+colnames(data)
+```
+
+# Research question: Which individual factors affect whether the students drop out or not? 
+
+** Select variables** 
+
+Here we have almost 40 variables, a lot of them can be used as predictors for academic success and dropout rates. These predictors can be put into different categories, one being the individual predictors, which provide information on academic path, demographics, and social-economic situations of the students, another being the macroeconomic factors, which are not specific to individual students or programs but may still have an impact on student outcomes. Here I'd focus on the effect of the factors pertaining to the individuals on whether or not the students dropped out. 
+
+```{r}
+data <- data %>% 
+  select("Marital status",
+         "Course",
+         "Previous qualification",
+         "Previous qualification (grade)",
+         "Nacionality",
+         "Mother's qualification",
+         "Father's qualification",
+         "Mother's occupation",
+         "Father's occupation",
+         "Admission grade",
+         "Displaced",
+         "Educational special needs",
+         "Debtor",
+         "Tuition fees up to date",
+         "Gender",
+         "Scholarship holder",
+         "Age at enrollment",
+         "International",
+         "Target"
+         )
+colnames(data)
+```
+
+# Methods 
+
+## Random forest 
+
+Random forest is applied to approach the research question. 
+
+**Process data**
+
+According to the provider of the dataset, no row contains missing values, so we don't need to omit those. 
+
+Now we will check if there are variables with no variability.  
+
+```{r}
+nearZeroVar(data, saveMetrics = TRUE)
+```
+
+We can see from the zeroVar column that all of our variables have variability.
+
+We check the number of rows in the dataset. 
+
+```{r}
+nrow(data)
+```
+We also need to ensure  that the character variables are converted into factors.
+
+```{r}
+# converting the text (character) variables in our dataset into factors
+data <- 
+    data %>% 
+    mutate_if(is.character, as.factor)
+```
+
+
+**Prepare train and test datasets**
+
+```{r}
+set.seed(2024)
+
+## 80% of the original dataset is used for training the model 
+trainIndex <- createDataPartition(data$Target, p = .8, list = FALSE, times = 1)
+
+data <- data %>% mutate(temp_id = 1:4424)
+```
+
+```{r}
+# we filter our dataset so that we get only the 
+# rows indicated by our "trainIndex" vector
+data_train <- 
+    data %>% 
+    filter(temp_id %in% trainIndex)
+```
+
+```{r}
+# we filter our dataset in a different way so that we get only the rows 
+# NOT in our "trainIndex" vector 
+# adding the ! before the temp_id variable achieves the opposite of 
+# what we did in the line of code above
+
+data_test <- 
+    data %>% 
+    filter(!temp_id %in% trainIndex)
+```
+
+```{r}
+# We delete the temp_id variable from (1) the original data, 
+# (2) the portion of the original data we marked as training, and 
+# (3) the portion of the original data we marked as testing, 
+# as we no longer need that variable
+
+data <- 
+    data %>% 
+    select(-temp_id)
+
+data_train <- 
+    data_train %>% 
+    select(-temp_id)
+
+data_test <- 
+    data_test %>% 
+    select(-temp_id)
+```
+
+**Run the model** 
+
+```{r}
+# setting a seed for reproducibility
+set.seed(2020)
+
+# we run the model here
+rf_fit <- train(Target ~ .,
+                data = data_train,
+                method = "ranger")
+
+# here, we get a summary of the model we just built
+rf_fit
+```
+
+Apparently the model with the value of the mtry tuning parameter equal to 2 explains the data best, the splitrule being "gini" and min.node.size held at a value of 1. 
+
+**Fine-tune the model**
+
+```{r}
+tune_grid <- expand.grid(
+  mtry = c(2, 10, 18),
+  splitrule = c("gini", "extratrees"),
+  min.node.size = c(1, 5, 10, 15, 20)
+)
+
+rf_fit2 <-
+    train(Target ~ .,
+          data = data_train,
+          method = "ranger",
+          tuneGrid = tune_grid)
+
+rf_fit2
+```
+
+We have a new best model but the improvement was not too considerable. Now we want to select only the final model used. 
+
+```{r}
+rf_fit2$finalModel
+```
+The reported OOB error of 37.02% suggests that, on average, the model is expected to make correct predictions about 62.98% of the time on new data.
+
+**Examine the accuracy on the test data set**
+
+```{r}
+# setting a seed for reproducibility
+set.seed(2020)
+
+# Create a new object for the testing data including predicted values 
+data_test_augmented <-
+    data_test %>%
+    mutate(pred = predict(rf_fit2, data_test),
+           obs = Target)
+
+# Transform this new object into a data frame
+defaultSummary(as.data.frame(data_test_augmented))
+```
+
+The accuracy for the test data is even a bit higher than for the training data, which suggests the model is able to handle new data. 
+
+**Variable importance**
+
+```{r}
+# setting a seed for reproducibility
+set.seed(2020)
+
+# Specify the same model as earlier in the chapter (rf_fit2) with the addition of the variable importance metric
+rf_fit2_imp <-
+    train(
+        Target ~ .,
+        data = data_train,
+        method = "ranger",
+        tuneGrid = tune_grid,
+        importance = "permutation"
+    )
+
+# Extract the variable importance from this new model
+varImp(rf_fit2_imp)
+```
+
+```{r}
+varImp(rf_fit2_imp) %>%
+    pluck(1) %>%
+    rownames_to_column("var") %>%
+    ggplot(aes(x = reorder(var, Overall), y = Overall)) +
+    geom_col(fill = dataedu_colors("darkblue")) +
+    coord_flip() +
+    theme_dataedu()
+```
+Here we could see the most important factors contributing to the model, but we can't see exactly how the predictors influence the likelihood of a student dropping out. We know that "tuition fees up to date" is important, but we don't know if that is a predictor for a student being enrolled, already graduating, or dropping out (though we can certainly take a guess). 
+
+## Multilevel Multinomial Logistic Regression Model
+
+We take a closer look at the impact of the predictors with a logistic regression model. We also want to pass "Course" as an additional argument for the group. 
+```{r}
+# Fit a multilevel multinomial logistic regression model
+multilevel_model <- multinom(Target ~ . + (1|Course), data = data)
+
+# Extract coefficients
+coefficients <- coef(multilevel_model)
+print(coefficients)
+```
+
+```{r}
+# Convert coefficients to odds ratios
+odds_ratios <- exp(coefficients)
+print(odds_ratios)
+```
+
+From this result, we can see that similar to our findings from the random forest model, tuition fees up to date is indeed the most important factor in the model. Holding all other predictors constant, a one-unit increase in Age at enrollment is associated with a 7.74 times increase in the odds of being "Enrolled" and 23.26 times increase in the odds of being a graduate compared to being a dropout. Being a scholarship holder will also considerably increase the likelihood of someone graduating. On the other hand, being a debtor or having educational special needs are associated with a significant decrease in the chance of graduating, which is something we don't see reflected in the random forest.
+
+What is surprising (and confusing) is that "international", which was not an important predictor according to the random forest, is the second most important factor here in this logistic regression model. Being an international student is associated with a substantial increase in the odds of being enrolled or graduating compared to being a dropout.
+
+On the contrary, there are a few predictors deemed quite important by the random forest but not by logistic regression, such as "Age at enrollment" and "Course". This suggests that there might be relationships between "Age at enrollment" / "Course" and our response variable "Target", which can't be modelled with linear regression. 
