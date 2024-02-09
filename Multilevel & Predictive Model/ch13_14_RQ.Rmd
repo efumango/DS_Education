@@ -27,6 +27,8 @@ head(data)
 colnames(data)
 ```
 
+For this challenge, the dataset on predicting students’ dropout and academic success is used. The dataset was compiled from various databases within a higher education institution related to students enrolled in different undergraduate degrees. It includes a wide range of information available at the time of students’ enrollment, such as academic path, demographics, social-economic factors. The primary objective involves constructing classification models to anticipate students' outcomes, specifically predicting dropout and academic success.   
+
 # Research question: Which individual factors affect whether the students drop out or not? 
 
 ** Select variables** 
