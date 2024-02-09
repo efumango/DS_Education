@@ -21,7 +21,7 @@ library(tidytext)
 
 **Import data**
 
-The .csv file was compiled from the google document, which includes time stamps in the history versions. 
+The imported data is the learning journal written for the seminar "Education as a Data Science Application Field". The learning journal was written on google docs, then put into an .csv file for data analysis. The .csv file includes the entries' titles, time stamps and content of the entries. 
 
 ```{r}
 here::here()
